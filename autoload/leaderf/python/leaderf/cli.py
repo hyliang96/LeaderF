@@ -488,11 +488,22 @@ class LfCli(object):
                     lfCmd("let ch = !type(nr) ? nr2char(nr) : nr")
 
                 if lfEval("!type(nr) && nr >= 0x20") == '1':
-                    self._insert(lfEval("ch"))
-                    self._buildPattern()
-                    if self._pattern is None or (self._refine and self._pattern[1] == ''): # e.g. abc;
-                        continue
-                    yield '<Update>'
+                    cmd = ''
+                    for (key, value) in self._cmd_map.items():
+                        for i in value:
+                            if lfEval('ch ==# "%s"' % i) == '1':
+                                cmd = key
+                                break
+                        if cmd != '':
+                            break
+                    if cmd != '':
+                        yield cmd
+                    else:
+                        self._insert(lfEval("ch"))
+                        self._buildPattern()
+                        if self._pattern is None or (self._refine and self._pattern[1] == ''): # e.g. abc;
+                            continue
+                        yield '<Update>'
                 else:
                     cmd = ''
                     for (key, value) in self._cmd_map.items():
