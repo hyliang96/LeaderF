@@ -205,9 +205,11 @@ class GtagsExplorer(Explorer):
 
             self._pattern_regex.append(r'\V' + case_pattern + p)
         else:
-            vim_regex = self.translateRegex(case_pattern + p)
             if "-g" not in arguments_dict:
+                vim_regex = self.translateRegex(case_pattern + p.join([r'\b', r'\b']))
                 vim_regex = vim_regex.replace('.', r'\w')
+            else:
+                vim_regex = self.translateRegex(case_pattern + p)
 
             self._pattern_regex.append(vim_regex)
 
@@ -851,7 +853,11 @@ class GtagsExplManager(Manager):
             else:
                 lfCmd("hide edit +%s %s" % (line_num, escSpecial(file)))
             lfCmd("norm! zz")
-            lfCmd("setlocal cursorline! | redraw | sleep 20m | setlocal cursorline!")
+            preview_dict = lfEval("g:Lf_PreviewResult")
+            if int(preview_dict.get(self._getExplorer().getStlCategory(), 0)) == 0:
+                lfCmd("setlocal cursorline! | redraw | sleep 150m | setlocal cursorline!")
+            else:
+                lfCmd("setlocal cursorline! | redraw | sleep 20m | setlocal cursorline!")
         except vim.error as e:
             lfPrintError(e)
 
@@ -970,23 +976,6 @@ class GtagsExplManager(Manager):
             lfCmd("call timer_stop(%s)" % self._timer_id)
             self._timer_id = None
 
-    def _previewResult(self, preview):
-        if not self._needPreview(preview):
-            return
-
-        line = self._getInstance().currentLine
-        orig_pos = self._getInstance().getOriginalPos()
-        cur_pos = (vim.current.tabpage, vim.current.window, vim.current.buffer)
-
-        saved_eventignore = vim.options['eventignore']
-        vim.options['eventignore'] = 'BufLeave,WinEnter,BufEnter'
-        try:
-            vim.current.tabpage, vim.current.window = orig_pos[:2]
-            self._acceptSelection(line)
-        finally:
-            vim.current.tabpage, vim.current.window, vim.current.buffer = cur_pos
-            vim.options['eventignore'] = saved_eventignore
-
     def _bangEnter(self):
         super(GtagsExplManager, self)._bangEnter()
         if lfEval("exists('*timer_start')") == '0':
@@ -1024,6 +1013,29 @@ class GtagsExplManager(Manager):
 
     def _supportsRefine(self):
         return True
+
+    def startExplorer(self, win_pos, *args, **kwargs):
+        if  "through" in kwargs.get("arguments", {}).get("--path-style", []):
+            self._orig_cwd = os.getcwd()
+
+            # https://github.com/neovim/neovim/issues/8336
+            if lfEval("has('nvim')") == '1':
+                chdir = vim.chdir
+            else:
+                chdir = os.chdir
+
+            if vim.current.buffer.name:
+                path = os.path.dirname(lfDecode(vim.current.buffer.name))
+            else:
+                path = os.getcwd()
+            root_markers = lfEval("g:Lf_RootMarkers")
+            project_root = self._getExplorer()._nearestAncestor(root_markers, path)
+            if project_root == "" and path != os.getcwd():
+                project_root = self._getExplorer()._nearestAncestor(root_markers, os.getcwd())
+            if project_root:
+                chdir(project_root)
+
+        super(GtagsExplManager, self).startExplorer(win_pos, *args, **kwargs)
 
 
 #*****************************************************

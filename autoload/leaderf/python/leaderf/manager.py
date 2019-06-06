@@ -255,7 +255,21 @@ class Manager(object):
         return False
 
     def _previewResult(self, preview):
-        pass
+        if not self._needPreview(preview):
+            return
+
+        line = self._getInstance().currentLine
+        orig_pos = self._getInstance().getOriginalPos()
+        cur_pos = (vim.current.tabpage, vim.current.window, vim.current.buffer)
+
+        saved_eventignore = vim.options['eventignore']
+        vim.options['eventignore'] = 'BufLeave,WinEnter,BufEnter'
+        try:
+            vim.current.tabpage, vim.current.window = orig_pos[:2]
+            self._acceptSelection(line)
+        finally:
+            vim.current.tabpage, vim.current.window, vim.current.buffer = cur_pos
+            vim.options['eventignore'] = saved_eventignore
 
     def _restoreOrigCwd(self):
         if self._orig_cwd is None:
@@ -296,7 +310,10 @@ class Manager(object):
         if not preview and int(preview_dict.get(category, 0)) == 0:
             return False
 
-        if self._getInstance().window.cursor[0] <= self._help_length:
+        if self._getInstance().isReverseOrder():
+            if self._getInstance().window.cursor[0] > len(self._getInstance().buffer) - self._help_length:
+                return
+        elif self._getInstance().window.cursor[0] <= self._help_length:
             return False
 
         if self._getInstance().empty() or vim.current.buffer != self._getInstance().buffer:
@@ -338,6 +355,7 @@ class Manager(object):
             self._getInstance().buffer.options['modifiable'] = True
             self._getInstance().buffer.append(help[::-1])
             self._getInstance().buffer.options['modifiable'] = False
+            self._getInstance().window.height = len(self._getInstance().buffer)
             lfCmd("normal! Gzb")
             self._getInstance().window.cursor = (orig_row, 0)
         else:
@@ -1039,8 +1057,6 @@ class Manager(object):
         self._createHelpHint()
         self.clearSelections()
         self._resetHighlights()
-        if self._getInstance().isReverseOrder():
-            self._getInstance().window.height = len(self._getInstance().buffer)
 
     def _accept(self, file, mode, *args, **kwargs):
         if file:
@@ -1416,8 +1432,10 @@ class Manager(object):
             self._is_content_list = False
             self._result_content = []
             self._callback = self._workInIdle
-            if lfEval("g:Lf_CursorBlink") == '0':
+            if lfEval("get(g:, 'Lf_NoAsync', 0)") == '1':
                 self._content = self._getInstance().initBuffer(content, self._getUnit(), self._getExplorer().setContent)
+                self._read_finished = 1
+                self._offset_in_content = 0
             else:
                 if self._getExplorer().getStlCategory() in ["Rg", "Gtags"]:
                     if "--append" in self.getArguments():
@@ -1450,8 +1468,10 @@ class Manager(object):
             self._is_content_list = False
             self._result_content = []
             self._callback = partial(self._workInIdle, content)
-            if lfEval("g:Lf_CursorBlink") == '0':
+            if lfEval("get(g:, 'Lf_NoAsync', 0)") == '1':
                 self._content = self._getInstance().initBuffer(content, self._getUnit(), self._getExplorer().setContent)
+                self._read_finished = 1
+                self._offset_in_content = 0
             else:
                 self._content = []
                 self._offset_in_content = 0
